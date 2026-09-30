@@ -54,6 +54,7 @@ Material white = { .color = {255,255,255}, .reflective = 0 };
 
 Vec3 light = {3,5,-15};
 float diffusionThres = 0.2;
+int rayBouncesThres = 10;
 
 Sphere spheres[100];
 int numSpheres = 0;
@@ -208,13 +209,23 @@ RayHit getRayDistanceSphere(Ray* ray, Sphere* obj) {
 	float t1 = (negDDotEMinusC + sqrtDiscrim) / dDotD;
 	float t2 = (negDDotEMinusC - sqrtDiscrim) / dDotD;
 	float t;
-	if (t1 > 0 && t2 > 0) {
-		t = (t1 < t2) ? t1 : t2;
-	} else if (t1 > 0) {
-		t = t1;
-	} else if (t2 > 0) {
-		t = t2;
-	} else {
+	float thres = 0.001;
+
+	// ignore small t values to stop acne
+	if (t1 > thres && t2 > thres) {
+    if (t1 < t2) {
+			t = t1;
+    } else {
+			t = t2;
+    }
+	}
+	else if (t1 > thres) {
+    t = t1;
+	}
+	else if (t2 > thres) {
+    t = t2;
+	}
+	else {
 		t = -1;
 	}
 
@@ -304,7 +315,6 @@ void getClosestSphere(Ray* ray, RayHit* closestRayHit, Sphere* closestSphere){
 	}
 }
 
-
 void getClosestTriangle(Ray* ray, RayHit* closestRayHit, Triangle* closestTriangle){
 	for(int i=0; i<numTriangles; i++){
 		Triangle triangle = triangles[i];
@@ -369,13 +379,15 @@ int main() {
       // Normalizing
 			normalize(&ray);
 
-      // Get closest Sphere (assume first is closest)
+			// Get closest Sphere
+			RayHit closestRayHit;
+			closestRayHit.t = -1; // assume no hit
 			Sphere closestSphere = spheres[0];
-			RayHit closestRayHit = getRayDistanceSphere(&ray, &closestSphere);
+			closestRayHit = getRayDistanceSphere(&ray, &closestSphere);
 			closestRayHit.bounces = 0;
 			getClosestSphere(&ray, &closestRayHit, &closestSphere);
 
-			// Check closest rayhit of triangles (assume first is closest)
+			// Check closest rayhit of triangles 
 			Triangle closestTriangle = triangles[0];
 			getClosestTriangle(&ray, &closestRayHit, &closestTriangle);
 			// Check for reflections and diffusion
@@ -383,29 +395,39 @@ int main() {
 			switch (closestRayHit.objType){
 			case SphereObj:
 				if (closestSphere.material.reflective){
-					// Bounce ray again until 10 bounces then color black
 					Vec3 color;
 					float diffusion = 1.0;
 					Ray reflectionRay = ray;
-					while(closestRayHit.bounces < 10){
+					// Bounce ray again until 10 bounces then color black
+					while(closestRayHit.bounces < rayBouncesThres){
 						closestRayHit.bounces += 1;
 
-						Ray reflectionSurfaceNormal = getSurfaceNormal(closestRayHit, closestSphere.position);
-						reflectionRay.direction = getCalcReflection(reflectionRay.normalized, reflectionSurfaceNormal.normalized);
+						Ray reflectionSurfaceNormal = getSurfaceNormal(closestRayHit,
+																													 closestSphere.position);
+						reflectionRay.direction = getCalcReflection(reflectionRay.normalized, 
+																												reflectionSurfaceNormal.normalized);
 
 						// Normalize and update new origin to where old ray hit
 						normalize(&reflectionRay);
 						reflectionRay.origin = closestRayHit.position;
 
+						// get new rayhit and closest obj
+						closestRayHit.t = -1; // assume no hit
 						getClosestSphere(&reflectionRay, &closestRayHit, &closestSphere);
 						getClosestTriangle(&reflectionRay, &closestRayHit, &closestTriangle);
 
-						if (closestRayHit.t <= 0){ // Didn't hit anything, color black
+						if (closestRayHit.t < 0){ // Didn't hit anything, color black
 							color = (Vec3) {0,0,0};
 							break;
 						}else if (!closestRayHit.material.reflective){
-							diffusion = diffuseSphere(closestRayHit, closestSphere.position);
-							break;
+							if (closestRayHit.objType == SphereObj){
+								diffusion = diffuseSphere(closestRayHit, closestSphere.position);
+								break;
+							}else if(closestRayHit.objType == TriangleObj){ // not drawing triangle bc 'nan' value returned
+								getNormal(&closestTriangle);
+								diffusion = diffuseTriangle(closestRayHit, closestTriangle);
+								break;
+							}
 						}
 					}
 
@@ -430,10 +452,10 @@ int main() {
 					if (closestTriangle.material.reflective){
 						// Bounce ray again until 10 bounces then color black-------------------------------------------------------------
 					}else{ 
-						float diffussion = diffuseTriangle(closestRayHit, closestTriangle);
-						Vec3 color = {closestRayHit.material.color.x * diffussion,
-													closestRayHit.material.color.y * diffussion,
-													closestRayHit.material.color.z * diffussion};
+						float diffusion = diffuseTriangle(closestRayHit, closestTriangle);
+						Vec3 color = {closestRayHit.material.color.x * diffusion,
+													closestRayHit.material.color.y * diffusion,
+													closestRayHit.material.color.z * diffusion};
 
 						colorPixel(arrayContainingImage, index, color);
 					}
