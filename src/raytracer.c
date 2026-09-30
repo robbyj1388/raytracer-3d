@@ -299,6 +299,7 @@ float diffuseTriangle(RayHit rayHit, Triangle triangle) {
     return diffusion;
 }
 
+
 void getClosestSphere(Ray* ray, RayHit* closestRayHit, Sphere* closestSphere){
 	for(int i=0; i<numSpheres; i++){
 		Sphere circle = spheres[i];
@@ -306,7 +307,7 @@ void getClosestSphere(Ray* ray, RayHit* closestRayHit, Sphere* closestSphere){
 		RayHit rayHit = getRayDistanceSphere(ray, &circle);
 		// If we hit something
 		if (rayHit.t > -1){
-			// if assumsion didn't hit anything assign what we hit
+			// if we didn't hit anything assign what we hit
 			if(closestRayHit->t < 0 || rayHit.t < closestRayHit->t){
 				*closestRayHit = rayHit;
 				*closestSphere = circle;
@@ -322,7 +323,7 @@ void getClosestTriangle(Ray* ray, RayHit* closestRayHit, Triangle* closestTriang
 		RayHit rayHit = getRayDistanceTriangle(ray, &triangle);
 		// If we hit something
 		if (rayHit.t > -1){
-			// if assumsion didn't hit anything assign what we hit
+			// if we didn't hit anything assign what we hit
 			if(closestRayHit->t < 0 || rayHit.t < closestRayHit->t){
 				*closestRayHit = rayHit;
 				*closestTriangle = triangle;
@@ -330,6 +331,42 @@ void getClosestTriangle(Ray* ray, RayHit* closestRayHit, Triangle* closestTriang
 		}
 	}
 }
+
+int inShadow(Ray ray, RayHit rayHit) { // Shoot ray and if something else other than light is hit return 1
+	// Direction from surface to light
+	Ray lightRay;
+	lightRay.origin = (Vec3) {
+		rayHit.position.x,
+		rayHit.position.y,
+		rayHit.position.z
+	};
+
+	lightRay.direction = (Vec3) {
+		light.x - rayHit.position.x,
+		light.y - rayHit.position.y,
+		light.z - rayHit.position.z
+	};
+
+	// Check if something is inbetween light and source
+	// Get closest Sphere
+	RayHit closestRayHit;
+	closestRayHit.t = -1; // assume no hit
+	Sphere closestSphere = spheres[0];
+	closestRayHit = getRayDistanceSphere(&lightRay, &closestSphere);
+	closestRayHit.bounces = 0;
+	getClosestSphere(&lightRay, &closestRayHit, &closestSphere);
+
+	// Check closest rayhit of triangles 
+	Triangle closestTriangle = triangles[0];
+	getClosestTriangle(&lightRay, &closestRayHit, &closestTriangle);
+
+	if (closestRayHit.t < 0){
+		return 0;
+	} 
+
+	return 1;
+}
+
 
 int main() {
   char filename[] = "reference.png";
@@ -426,6 +463,10 @@ int main() {
 							}else if(closestRayHit.objType == TriangleObj){ // not drawing triangle bc 'nan' value returned
 								getNormal(&closestTriangle);
 								diffusion = diffuseTriangle(closestRayHit, closestTriangle);
+								if (inShadow(ray, closestRayHit)){
+									diffusion = diffusionThres;
+								}
+									
 								break;
 							}
 						}
@@ -438,6 +479,9 @@ int main() {
 					colorPixel(arrayContainingImage, index, color);
 				}else{
 					float diffusion = diffuseSphere(closestRayHit, closestSphere.position);
+					if (inShadow(ray, closestRayHit)){
+						diffusion = diffusionThres;
+					}
 					Vec3 color = {closestRayHit.material.color.x * diffusion,
 												closestRayHit.material.color.y * diffusion,
 												closestRayHit.material.color.z * diffusion};
@@ -453,6 +497,9 @@ int main() {
 						// Bounce ray again until 10 bounces then color black-------------------------------------------------------------
 					}else{ 
 						float diffusion = diffuseTriangle(closestRayHit, closestTriangle);
+						if (inShadow(ray, closestRayHit)){
+							diffusion = diffusionThres;
+						}
 						Vec3 color = {closestRayHit.material.color.x * diffusion,
 													closestRayHit.material.color.y * diffusion,
 													closestRayHit.material.color.z * diffusion};
